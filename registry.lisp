@@ -85,6 +85,7 @@
 (defconstant +desire-all-access+ #xf003f)
 
 (defun reg-open-key (name &key key (options 0) (desired +desire-all-access+))
+  "Open the registry key named by NAME, which lives under the key named by KEY."
   (with-foreign-object (handle 'hkey)
     (let ((sts (%reg-open-key (resolve-key key)
 			      name 
@@ -105,11 +106,6 @@
      (unwind-protect (progn ,@body)
        (reg-close-key ,var))))
 
-
-
-
-
-
 (defcfun (%reg-create-key "RegCreateKeyExA" :convention :stdcall)
     :long
   (key hkey)
@@ -123,6 +119,7 @@
   (disposition :pointer))
 
 (defun reg-create-key (name &key key (options 0) (desired +desire-all-access+))
+  "Create a new registry key named NAME underneath the key KEY."
   (with-foreign-object (handle 'hkey)
     (let ((res (%reg-create-key (resolve-key key)
 				name 
@@ -149,6 +146,7 @@
   (last-write :pointer))
 
 (defun reg-enum-key (key &optional tree)
+  "Return a list of all subkeys of the key named by KEY. KEY can be a key handle, as returned by REG-OPEN-KEY, or a string naming a key, with TREE a keyword naming a top-level registry tree."
   (if (stringp key)
       (with-reg-key (k key :key tree)
 	(reg-enum-key k))
@@ -193,6 +191,7 @@
     (:multi-string 7)))
 
 (defun reg-enum-value (key &optional tree)
+  "List all the values of the registry key."
   (if (stringp key)
       (with-reg-key (k key :key tree)
 	(reg-enum-value k))
@@ -241,6 +240,7 @@
   (size :uint32))
 
 (defun reg-set-value (key name data type)
+  "Set the registry value. Data should be an octet vector, type should be a keyword."
   (declare (type vector data)
 	   (type symbol type)
 	   (type string name))
@@ -268,6 +268,7 @@
   (name :string))
 
 (defun reg-delete-value (key name)
+  "Delete a registry value."
   (with-foreign-string (nstr name)
     (let ((res (%reg-delete-value key nstr)))
       (if (= res 0)
@@ -284,6 +285,7 @@
   (length :uint32))
 
 (defun reg-set-key-value (key name data &key subkey (type :string))
+  "Set a registry value underneath subkey SUBKEY."
   (let ((length (length data)))
     (with-foreign-object (buffer :uint8 length)
       (with-foreign-strings ((nstr name)
@@ -305,6 +307,7 @@
   (subkey :string))
 
 (defun reg-delete-tree (key &optional subkey)
+  "Delete a registry key and all its subkeys/values."
   (with-foreign-string (skstr (or subkey ""))
     (let ((res (%reg-delete-tree (resolve-key key)
 				 (if subkey skstr (null-pointer)))))
@@ -323,6 +326,7 @@
   (size :pointer))
 
 (defun reg-get-value (key name &optional subkey)
+  "Get a registry value."
   (if (and subkey (stringp subkey))
       (with-reg-key (k subkey :key key)
 	(reg-get-value k name))
