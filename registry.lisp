@@ -352,3 +352,7 @@
 		   v)
 		 (first (find (mem-ref tbuff :uint32) *reg-types* :key #'second)))
 		(error 'win-error :code res)))))))
+
+
+
+

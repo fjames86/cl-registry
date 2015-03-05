@@ -9,7 +9,7 @@
   :license "MIT"
   :components
   ((:file "registry"))
-  :depends-on (:cffi :cl-ppcre))
+  :depends-on (:cffi))
 
 
 
