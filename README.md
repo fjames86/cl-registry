@@ -17,4 +17,10 @@ This package provides a low level wrapper over the Windows registry API.
 (reg-enum-value "SOFTWARE\\Microsoft" :tree :local-machine)
 ```
 
+;; Easier
+```
+(reg "HKLM")
+(reg "HKLM\\Software")
+```
+
 

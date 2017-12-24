@@ -15,7 +15,8 @@
 	   #:reg-delete-value
 	   #:reg-set-key-value
 	   #:reg-delete-tree
-	   #:reg-get-value))
+	   #:reg-get-value
+	   #:reg))
 
 (in-package #:cl-registry)
 
@@ -72,10 +73,15 @@
 
 (defparameter *hkey-trees* 
   '((:classes-root . 2147483648) 
-    (:current-user . 2147483649) 
-    (:local-machine . 2147483650) 
-    (:users . 2147483651) 
-    (:current-config . 2147483653)))
+    (:hkcr . 2147483648)     
+    (:current-user . 2147483649)
+    (:hkcu . 2147483649) 
+    (:local-machine . 2147483650)
+    (:hklm . 2147483650) 
+    (:users . 2147483651)
+    (:hkuser . 2147483651) 
+    (:current-config . 2147483653)
+    (:hkcc . 2147483653)))
 
 (defun resolve-key (key)
   (etypecase key
@@ -83,14 +89,22 @@
     (integer key)))
 
 (defconstant +desire-all-access+ #xf003f)
+(defconstant +desire-key-read+ #x20019)
 
 (defun reg-open-key (name &key key (options 0) (desired +desire-all-access+))
   "Open the registry key named by NAME, which lives under the key named by KEY."
   (with-foreign-object (handle 'hkey)
     (let ((sts (%reg-open-key (resolve-key key)
-			      name 
+			      (or name (cffi:null-pointer))
 			      options 
-			      desired
+			      (cond
+				((symbolp desired)
+				 (ecase desired
+				   (:read +desire-key-read+)
+				   (:all +desire-all-access+)))
+				((integerp desired)
+				 desired)
+				(t (error "must be integer or :read or :all")))
 			      handle)))
       (if (zerop sts)
 	  (mem-ref handle 'hkey)
@@ -101,8 +115,8 @@
   (key hkey))
 
 
-(defmacro with-reg-key ((var name &key key) &body body)
-  `(let ((,var (reg-open-key ,name :key ,key)))
+(defmacro with-reg-key ((var name &key key desired ) &body body)
+  `(let ((,var (reg-open-key ,name :key ,key :desired ,(or desired :read))))
      (unwind-protect (progn ,@body)
        (reg-close-key ,var))))
 
@@ -217,16 +231,20 @@
 	    (if (= res 0)
 		(push 
 		 (let ((vec (make-array (mem-ref data-size :uint32)
-					:element-type '(unsigned-byte 8))))
+					:element-type '(unsigned-byte 8)))
+		       (rtype (first 
+			       (find (mem-ref type :uint32)
+				     *reg-types*
+				     :key #'second))))
 		   (dotimes (i (mem-ref data-size :uint32))
 		     (setf (aref vec i) (mem-ref data :uint8 i)))
 		   (list (foreign-string-to-lisp name-buffer 
 						 :count (mem-ref size :uint32))
-			 vec 
-			 (first 
-			  (find (mem-ref type :uint32)
-				*reg-types*
-				:key #'second))))
+			 (case rtype
+			   ((:string :expand-string) (babel:octets-to-string vec :end (position 0 vec)))
+			   (:dword (nibbles:ub32ref/le vec 0))
+			   (t vec))
+			 rtype))
 		 vals)
 		(setf done t)))))))
 
@@ -356,3 +374,24 @@
 
 
 
+(defun parse-hive (key)
+  (let ((pos (position #\\ key :test #'char=)))
+    (values (let ((k (if pos
+			 (subseq key 0 pos)
+			 key)))
+	      (cond
+		  ((string-equal k "HKLM") :hklm)
+		  ((string-equal k "HKCU") :hkcu)
+		  ((string-equal k "HKCR") :hkcr)
+		  ((string-equal k "HKCC") :hkcc)
+		  ((string-equal k "HKUSER") :hkuser)
+		  (t (error "Unknown hive ~S" k))))
+	    (if pos
+		(subseq key (1+ pos))
+		nil))))
+
+(defun reg (key)
+  (multiple-value-bind (hive path) (parse-hive key)
+    (with-reg-key (k path :key hive :desired :read)
+      (append (reg-enum-key k)
+	      (reg-enum-value k)))))
