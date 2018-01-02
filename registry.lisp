@@ -16,7 +16,12 @@
 	   #:reg-set-key-value
 	   #:reg-delete-tree
 	   #:reg-get-value
-	   #:reg))
+	   
+	   #:reg
+	   #:create-key
+	   #:remove-key
+	   #:set-reg-value)
+  (:nicknames #:reg))
 
 (in-package #:cl-registry)
 
@@ -390,8 +395,51 @@
 		(subseq key (1+ pos))
 		nil))))
 
-(defun reg (key)
+(defun reg (key &optional no-subkeys-p no-values-p)
+  "Enumerate all subkeys and values of the given KEY. Key must begin with 
+hive identifier HKLM, HKCU, HKCR, HKCC, HKUSER.
+
+NO-SUBKEYS-P ::= if true do not enumerate subkeys.
+NO-VALUES-P ::= if true do not enumerate values.
+
+Values are returned as a list of 3 elements: name value type
+where type is a keyword from :dword, :string, :binary :multi-string, :expand-string.
+
+"
   (multiple-value-bind (hive path) (parse-hive key)
     (with-reg-key (k path :key hive :desired :read)
-      (append (reg-enum-key k)
-	      (reg-enum-value k)))))
+      (append (unless no-subkeys-p (reg-enum-key k))
+	      (unless no-values-p (reg-enum-value k))))))
+
+(defun set-reg-value (key name value &optional type)
+  (multiple-value-bind (hive path) (parse-hive key)
+    (with-reg-key (k path :key hive :desired :read)
+      (let* ((tname (if (null type)
+			(cond 
+			  ((stringp value) :string)
+			  ((vectorp value) :binary)
+			  ((integerp value) :dword)
+			  (t (error "Value must be string integer or octet vector")))
+			type))
+	     (vec (ecase tname
+		    ((:string :expand-string :multi-string)
+		     (babel:string-to-octets value))
+		    (:dword (let ((v (nibbles:make-octet-vector 4)))
+			      (setf (nibbles:ub32ref/le v 0) value)
+			      v))
+		    (:binary value))))
+	(reg-set-value k
+		       name
+		       vec
+		       tname)))))
+
+(defun create-key (name parentkey)
+  (multiple-value-bind (hive path) (parse-hive parentkey)
+    (with-reg-key (k path :key hive :desired :all)
+      (reg-create-key name :key k))))
+
+(defun remove-key (name)
+  (multiple-value-bind (hive path) (parse-hive name)
+    (with-reg-key (k path :key hive :desired :all)
+      (reg-delete-tree k))))
+
